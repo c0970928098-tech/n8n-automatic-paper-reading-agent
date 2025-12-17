@@ -1,0 +1,360 @@
+{
+  "name": "other workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "==Current workflow time (use this as \"NOW\" for date comparison) is:\n{{ $node[\"Schedule Trigger\"].json[\"timestamp\"] || $now }}\n\nYou will receive several arXiv papers. Each paper is given as:\n[English title]\n[updated time in ISO 8601, UTC]\n[English abstract]\n\nHere is the data:\n--------------------\n{{\n  // 把 feed.entry 正規化成陣列（如果只有一篇就包成陣列）\n  (Array.isArray($json.feed.entry) ? $json.feed.entry : [$json.feed.entry])\n    // 如果怕太多，可以 .slice(0, 5) 只拿前 5 篇\n    .slice(0, 5)\n    .map(e => `${e.title}\\n${e.updated}\\n${e.summary}`)\n    .join('\\n--------------------\\n')\n}}\n\nUsing the rules from the system message:\n- Decide which papers are within the past 3 days (UTC) based on NOW and their `updated` time.\n- If there is at least one matching paper, output \"state\" = \"success\" and include ALL matching papers in \"papers\", ordered from most recent to oldest.\n- If there is no matching paper, output \"state\" = \"empty\" and \"papers\" = [].\nReturn JSON only.\n",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are a strict JSON generator for an n8n workflow.\n\nTask:\n- You will receive multiple arXiv papers in the USER message.\n- Each paper is formatted as 3 lines:\n  1) English title\n  2) updated time in ISO 8601, UTC\n  3) English abstract\n  Papers are separated by a line \"--------------------\".\n\nYou will also receive a \"NOW\" timestamp in the USER message. Use it only as a reference for date comparison when needed.\n\nMatching rule:\n- Select a paper as \"matching\" ONLY if it matches the topic criteria described below.\n- Topic criteria (edit this section to your needs):\n  - Include if the title or abstract is about: [PUT YOUR KEYWORDS/TOPICS HERE]\n  - Exclude if it is mainly about: [PUT EXCLUSIONS HERE, optional]\n\nOutput requirements (VERY IMPORTANT):\n- Output MUST be valid JSON only (no markdown, no extra text).\n- Output schema MUST be exactly:\n  {\n    \"state\": \"success\" | \"empty\",\n    \"papers\": [\n      {\n        \"title\": string,\n        \"updated\": string,   // ISO 8601 UTC as provided\n        \"abstract\": string\n      }\n    ]\n  }\n- Include ALL matching papers.\n- Order papers by \"updated\" from most recent to oldest.\n- If no matching paper: \"state\" = \"empty\" and \"papers\" = [].\n- Do NOT add any extra keys.\n- Do NOT rewrite timestamps. Keep exactly as provided."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -528,
+        32
+      ],
+      "id": "2ebee4dc-7925-4185-86a7-ab54c484baf3",
+      "name": "AI Agent",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -528,
+        240
+      ],
+      "id": "c0cc324c-b8ba-4224-b33d-59784fbaaf16",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "DRCWylAe61tRhsqQ",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"state\": \"string\",\n  \"papers\": [\n    {\n      \"title_en\": \"string\",\n      \"title_zh\": \"string\",\n      \"updated\": \"string\",\n      \"summary_en\": \"string\",\n      \"summary_zh\": \"string\"\n    }\n  ]\n}\n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -384,
+        240
+      ],
+      "id": "76f7f507-81a2-4bcf-899d-74bfe63f27ea",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "==You are a bilingual assistant. I will give you one or more paper titles and abstracts in English.\nPlease generate a plain-text email body (no markdown, no JSON).  \n\nFor EACH paper, use the following format, in the same order as given:\n\n[English Title]\n[English Abstract]\n\n----\n\n[Chinese Title (Traditional Chinese)]\n[Chinese Abstract (Traditional Chinese)]\n\nSeparate different papers with a line of:\n====================\n\nHere is the data (each block corresponds to one paper):\n\n--------------------\n{{\n  (($json.output && Array.isArray($json.output.papers)) ? $json.output.papers : [])\n    .map((p, idx) => \n      'Paper ' + (idx + 1) + ':\\n' +\n      'English Title:\\n' + p.title_en + '\\n\\n' +\n      'English Abstract:\\n' + p.summary_en\n    )\n    .join('\\n\\n--------------------\\n\\n')\n}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        16,
+        16
+      ],
+      "id": "0545de0d-f045-4700-9fb0-52590fddfbdf",
+      "name": "Message a model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "DRCWylAe61tRhsqQ",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1488,
+        32
+      ],
+      "id": "23ec9f87-cd7f-42bc-b395-2c283ec024ef",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "sendTo": "#insert your mail address",
+        "subject": "每日論文自動寄信功能",
+        "message": "==<!DOCTYPE html>\n<html>\n  <body style=\"margin:0; padding:0; background:#f3f4f6;\">\n    <div style=\"max-width:800px; margin:24px auto; padding:0 12px;\">\n\n      <!-- Header 區 -->\n      <div style=\"background:#0f172a; border-radius:16px 16px 0 0; padding:18px 24px;\">\n        <div style=\"font-size:22px; font-weight:700; color:#ffffff; letter-spacing:0.5px;\">\n          每日論文精選\n        </div>\n        <div style=\"margin-top:4px; font-size:13px; color:#e5e7eb;\">\n          產生時間：{{ $now }}\n        </div>\n      </div>\n\n      <!-- 內容卡片外框 -->\n      <div style=\"background:#ffffff; border-radius:0 0 16px 16px; padding:20px 24px 16px 24px; box-shadow:0 10px 25px rgba(15,23,42,0.18); border-top:1px solid #0f172a;\">\n\n        <p style=\"margin:0 0 18px 0; font-size:14px; color:#374151; line-height:1.7;\">\n          以下是過去兩天內自動整理出的論文摘要，已依照時間排序，方便你快速瀏覽重點內容。\n        </p>\n\n        {{\n          (() => {\n            const papers = Array.isArray($json.papers) ? $json.papers : [];\n            if (papers.length === 0) {\n              return (\n                '<div style=\"padding:40px 0; text-align:center; border-radius:12px; border:1px solid #e5e7eb; background:#f9fafb;\">' +\n                  '<div style=\"font-size:16px; font-weight:600; color:#111827; margin-bottom:6px;\">' +\n                    '今天沒有符合條件的論文' +\n                  '</div>' +\n                  '<div style=\"font-size:13px; color:#6b7280;\">' +\n                    '系統會持續幫你關注最新論文更新。' +\n                  '</div>' +\n                '</div>'\n              );\n            }\n\n            return papers\n              .map((p, idx) =>\n                '<div style=\"border-radius:14px; border:1px solid #e5e7eb; padding:16px 18px; margin-bottom:16px; background:#f9fafb;\">' +\n\n                  // 編號 + 日期 + 連結列\n                  '<div style=\"display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; gap:12px;\">' +\n                    '<div>' +\n                      '<div style=\"font-size:13px; font-weight:600; color:#111827; margin-bottom:4px;\">' +\n                        '第 ' + (idx + 1) + ' 篇' +\n                      '</div>' +\n                      (p.updated\n                        ? '<div style=\"font-size:12px; color:#6b7280;\">更新時間：' + p.updated + '</div>'\n                        : ''\n                      ) +\n                    '</div>' +\n                    '<div style=\"font-size:12px; text-align:right;\">' +\n                      (p.url\n                        ? '<a href=\"' + p.url + '\" target=\"_blank\" ' +\n                            'style=\"color:#2563eb; text-decoration:none; word-break:break-all;\">' +\n                            '前往原文' +\n                          '</a>'\n                        : '<span style=\"color:#9ca3af;\">無原文連結</span>'\n                      ) +\n                    '</div>' +\n                  '</div>' +\n\n                  // 內文卡片\n                  '<div style=\"background:#ffffff; border-radius:10px; border:1px solid #e5e7eb; padding:12px 14px;\">' +\n\n                    // 英文標題\n                    '<div style=\"font-size:15px; font-weight:600; color:#111827; margin-bottom:4px;\">' +\n                      p.title_en +\n                    '</div>' +\n\n                    // 英文摘要\n                    '<div style=\"margin:0 0 10px 0; font-size:13px; line-height:1.6; color:#374151; white-space:pre-wrap;\">' +\n                      p.summary_en +\n                    '</div>' +\n\n                    '<div style=\"border-top:1px solid #e5e7eb; margin:8px 0 10px 0;\"></div>' +\n\n                    // 中文標題\n                    '<div style=\"font-size:15px; font-weight:600; color:#111827; margin-bottom:4px;\">' +\n                      p.title_zh +\n                    '</div>' +\n\n                    // 中文摘要\n                    '<div style=\"margin:0; font-size:13px; line-height:1.7; color:#111827; white-space:pre-wrap;\">' +\n                      p.summary_zh +\n                    '</div>' +\n\n                  '</div>' +\n\n                '</div>'\n              )\n              .join('');\n          })()\n        }}\n\n      </div>\n    </div>\n  </body>\n</html>\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        576,
+        16
+      ],
+      "id": "ee72cc64-d028-45b5-8f6b-e4fe21f947fe",
+      "name": "Send a message",
+      "webhookId": "a4026837-280c-45cc-98fe-34baf1b52b4b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "a27XMZwuEPvQfotn",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.content.parts[0].text }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -944,
+        32
+      ],
+      "id": "eea71fef-0779-477c-a9b6-2ad81e295b31",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "Give me the arxiv api of latest 7 papers about LLMs in cs.AI."
+            }
+          ]
+        },
+        "options": {
+          "systemMessage": " Your only task is to produce a single valid ArXiv API URL based on the user’s request. \nYou must follow these rules:  You must output only one URL. No explanations, no text, no markdown, no code blocks, and no extra lines.  \nThe URL must strictly follow this format:  https://export.arxiv.org/api/query?search_query=<QUERY>&start=<START>&max_results=<MAX>&sortBy=<SORTBY>&sortOrder=<ORDER>   \nYou must convert the user’s request into proper ArXiv API parameters:  search_query → includes cat:, all:, ti:, etc.  start → integer  max_results → integer  sortBy → relevance, lastUpdatedDate, or submittedDate  sortOrder → ascending or descending  \nIf the user adds or modifies search conditions, you must modify the search_query parameter accordingly (using AND / OR).  \nIf the user input is incomplete, you must fill in reasonable defaults according to ArXiv API (e.g., max_results=10).  \nYou must never output anything other than the URL itself. \n Most important rule:  Your response must contain only the URL, with nothing else."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1248,
+        32
+      ],
+      "id": "733f8f89-8d7d-44ae-8e3e-3a56fa5353aa",
+      "name": "Message a model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "DRCWylAe61tRhsqQ",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        -752,
+        32
+      ],
+      "id": "ced5d013-4875-4b2e-ad85-379dad2894d0",
+      "name": "XML"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b8cf77d0-3c6e-4cd2-bfc9-47fdaded40c3",
+              "leftValue": "={{ $json[\"output\"][\"state\"] }}",
+              "rightValue": "success",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -192,
+        32
+      ],
+      "id": "c807be0e-bea3-4560-8d6c-1690268a34ae",
+      "name": "Check paper state"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 從上一個節點（Message a model）的輸出文字\nconst text = $json.content?.parts?.[0]?.text ?? \"\";\n\n// 依照你設計的格式：多篇之間用 \\n====================\\n 分隔\nconst blocks = text.split(\"\\n====================\\n\");\n\n// 從前面的 XML 節點拿 arXiv feed\n// ⚠️ 如果你的 XML 節點名稱不是 \"XML\"，請改成實際的節點名字\nconst feed = $node[\"XML\"].json.feed;\nlet entries = feed?.entry ?? [];\nif (!Array.isArray(entries)) {\n  entries = [entries];\n}\n\n// 這裡改成 papers 陣列，最後一次性回傳\nconst papers = [];\n\nfor (const block of blocks) {\n  const trimmed = block.trim();\n  if (!trimmed) continue; // 跳過空 block\n\n  // 每個 block 裡用 \\n\\n----\\n\\n 分開「英文段」和「中文段」\n  const parts = trimmed.split(\"\\n\\n----\\n\\n\");\n  const en = parts[0] || \"\";\n  const zh = parts[1] || \"\";\n\n  // 各自再用換行拆成「第一行標題，其餘是摘要」\n  const enLines = en.split(\"\\n\");\n  const zhLines = zh.split(\"\\n\");\n\n  const title_en = (enLines[0] || \"\").trim();\n  const summary_en = enLines.slice(1).join(\"\\n\").trim();\n\n  const title_zh = (zhLines[0] || \"\").trim();\n  const summary_zh = zhLines.slice(1).join(\"\\n\").trim();\n\n  // 用英文標題去 XML 裡找對應 entry 拿 URL\n  let url = \"\";\n  let target = entries.find(e => e.title === title_en);\n\n  // 找不到就用第一篇當 fallback（避免整個沒 URL）\n  if (!target && entries.length > 0) {\n    target = entries[0];\n  }\n\n  if (target) {\n    url = target.id || (target.link && target.link.href) || \"\";\n  }\n\n  papers.push({\n    title_en,\n    summary_en,\n    title_zh,\n    summary_zh,\n    url,\n    updated: target?.updated || \"\"\n  });\n}\n\n// ✅ 一封信寄全部：回傳單一物件，裡面有 papers 陣列\nreturn {\n  papers,\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        16
+      ],
+      "id": "d90dee5b-faa0-4608-9f9e-a4994ae30e73",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Check paper state",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "XML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Message a model1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "XML": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check paper state": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "97731a8a-1881-4184-a4eb-85db792aba5d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "412c98f3a66dad1758e6545c7abd977b164ee5ed355eefe23a6e3ad515cc949e"
+  },
+  "id": "1oXx302tZIYfCsGB",
+  "tags": []
+}
